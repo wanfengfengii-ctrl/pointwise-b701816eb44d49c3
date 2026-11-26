@@ -35,6 +35,13 @@ def _invalid_constant(value):
     raise ValueError(f'{value} is not a JSON constant')
 
 
+def _frame_document(service, show, aired):
+    document = asdict(aired)
+    if not service.is_relay(show):
+        document.pop('request_id', None)
+    return document
+
+
 class BroadcastRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self._handle('GET')
@@ -101,7 +108,8 @@ class BroadcastRequestHandler(BaseHTTPRequestHandler):
                 raise BroadcastError(400, 'invalid_request', 'replay requires one start and one end')
             start = _decimal(query['start'][0])
             end = _decimal(query['end'][0])
-            return 200, {'frames': [asdict(frame) for frame in service.replay_frames(parts[1], start, end)]}
+            frames = service.replay_frames(parts[1], start, end)
+            return 200, {'frames': [_frame_document(service, parts[1], frame) for frame in frames]}
         if query:
             raise BroadcastError(400, 'invalid_request', 'this endpoint takes no query parameters')
         match method, parts:
@@ -120,9 +128,15 @@ class BroadcastRequestHandler(BaseHTTPRequestHandler):
                 self._body()
                 return 200, {'cue_id': service.stop_cue(show, _decimal(cue)), 'stopped': True}
             case 'POST', ['shows', show, 'frames']:
-                return 201, asdict(service.emit_frame(show, **self._body('frame')))
+                return 201, _frame_document(service, show, service.emit_frame(show, **self._body('frame')))
+            case 'POST', ['shows', show, 'stage']:
+                status, payload = service.stage_candidate(show, **self._body('frame', 'request_id'))
+                return status, payload
+            case 'POST', ['shows', show, 'sync']:
+                self._body()
+                return 200, service.sync_relay(show)
             case 'GET', ['shows', show, 'frames', frame]:
-                return 200, asdict(service.read_frame(show, _decimal(frame)))
+                return 200, _frame_document(service, show, service.read_frame(show, _decimal(frame)))
             case _:
                 raise BroadcastError(404, 'unknown_endpoint', 'endpoint does not exist')
 
@@ -139,13 +153,23 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description='Serve a local live sound-effects studio')
     parser.add_argument('--db', required=True, type=Path)
     parser.add_argument('--show', required=True, action='append')
+    parser.add_argument('--relay', action='append', default=[], metavar='SHOW=BASE',
+                        help='configure a relay show with its playout endpoint base URL')
     parser.add_argument('--host', default='127.0.0.1', choices=('127.0.0.1',))
     parser.add_argument('--port', type=int, default=8765, choices=range(0, 65536), metavar='PORT')
     parser.add_argument('--init-only', action='store_true')
     args = parser.parse_args(argv)
+    relay = {}
+    for entry in args.relay:
+        show, separator, base = entry.partition('=')
+        if not separator or not show or not base:
+            parser.error(f'--relay expects SHOW=BASE, got {entry!r}')
+        relay[show] = base
     try:
-        service = BroadcastService(args.db)
+        service = BroadcastService(args.db, relay=relay)
         for show in args.show:
+            service.prepare_show(show)
+        for show in relay:
             service.prepare_show(show)
         if args.init_only:
             return 0
@@ -154,7 +178,7 @@ def main(argv=None):
             server.serve_forever()
     except KeyboardInterrupt:
         return 0
-    except (BroadcastError, OSError) as error:
+    except (BroadcastError, OSError, ValueError) as error:
         print(str(error), file=sys.stderr)
         return 1
     return 0

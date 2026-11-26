@@ -2,11 +2,12 @@ import sqlite3
 from contextlib import closing, contextmanager
 from pathlib import Path
 
-from aircheck.store import create_aircheck_schema
+from aircheck.store import create_aircheck_schema, ensure_request_id_column
 from assets.store import create_asset_schema
 from cues.store import create_cue_schema
 from mix.errors import BroadcastError
 from mix.frontier import create_frontier_schema
+from relay.store import create_relay_schema
 from scenes.store import create_scene_schema
 
 
@@ -40,3 +41,5 @@ def initialize_database(path: str | Path) -> None:
         create_cue_schema(db)
         create_frontier_schema(db)
         create_aircheck_schema(db)
+        ensure_request_id_column(db)
+        create_relay_schema(db)

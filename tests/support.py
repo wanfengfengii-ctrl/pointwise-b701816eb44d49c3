@@ -63,6 +63,16 @@ class StudioClient:
     def emit(self, frame, show='studio'):
         return self.expect('POST', show_path(show) + '/frames', 201, {'frame': frame})
 
+    def stage(self, frame, request_id, show='studio'):
+        return self.expect('POST', show_path(show) + '/stage', 200,
+                           {'frame': frame, 'request_id': request_id})
+
+    def sync(self, show='studio'):
+        return self.expect('POST', show_path(show) + '/sync', 200)
+
+    def tick(self, frame, show='studio'):
+        return self.expect('POST', show_path(show) + '/tick', 200, {'frame': frame})
+
     def read(self, frame, show='studio'):
         return self.expect('GET', show_path(show) + f'/frames/{frame}', 200)
 

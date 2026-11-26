@@ -20,6 +20,16 @@ def require_id(value, field: str) -> int:
     return value
 
 
+def require_request_id(value) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise BroadcastError(400, 'invalid_request', 'request_id must be nonempty text')
+    try:
+        value.encode('utf-8')
+    except UnicodeEncodeError as error:
+        raise BroadcastError(400, 'invalid_request', 'request_id must be valid Unicode') from error
+    return value
+
+
 def require_frame(value, field: str = 'frame') -> int:
     if type(value) is not int or value < 0:
         raise BroadcastError(400, 'invalid_frame', f'{field} must be a nonnegative integer')
